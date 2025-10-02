@@ -6,7 +6,7 @@ services:
       - "80:80"
 #      - "443:443"  # Si luego quieres usar HTTPS
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf.template:/etc/nginx/nginx.conf:ro
     networks:
       - red_app1
       - red_app2
