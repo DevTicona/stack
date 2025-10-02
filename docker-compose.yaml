@@ -1,18 +1,13 @@
 services:
-  nginx_proxy:
+  nginx-proxy-frontal:
     image: nginx:alpine
-    container_name: nginx_proxy
+    container_name: nginx-proxy-frontal
     ports:
       - "80:80"
 #      - "443:443"  # Si luego quieres usar HTTPS
     volumes:
       - ./nginx.conf.template:/etc/nginx/nginx.conf:ro
-    networks:
-      - red_app1
-      - red_app2
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
-networks:
-  red_app1:
-    external: true
-  red_app2:
-    external: true

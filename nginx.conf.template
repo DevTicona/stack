@@ -1,9 +1,10 @@
 events {}
 
 http {
+    resolver 8.8.8.8 1.1.1.1 ipv6=off;
     server {
         listen 80;
-        server_name capibara.senarecom.com;
+        server_name capibara.192.168.26.240.nip.io
 
         location / {
             proxy_pass http://capibara.192.168.26.240.nip.io:81;
@@ -16,7 +17,7 @@ http {
 
     server {
         listen 80;
-        server_name wara.senarecom.com;
+        server_name capibara.192.168.26.240.nip.io;
 
         location / {
             proxy_pass http://wara.192.168.26.240.nip.io:82;
