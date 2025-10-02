@@ -1,0 +1,90 @@
+---
+- name: Instalar y configurar servidor NFS
+  hosts: localhost
+  become: yes
+  vars:
+    nfs_exports:
+      - path: /nfs/capibara-demo/adjuntos
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+      - path: /nfs/capibara-demo/fotos
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+      - path: /nfs/capibara-demo/notificaciones
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+      - path: /nfs/capibara-demo/reportes
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+      - path: /nfs/capibara-demo/logs
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+
+      - path: /nfs/wara-demo/imagenes
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+      - path: /nfs/wara-demo/logs
+        network: "192.168.26.240/24"
+        options: rw,sync,no_subtree_check,no_root_squash
+
+    logrotate_paths: "{{ nfs_exports | selectattr('path','search','/logs$') | map(attribute='path') | list }}"
+
+  tasks:
+    - name: Instalar paquetes NFS
+      apt:
+        name: [nfs-kernel-server]
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Crear directorios exportados
+      file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: '0777'
+      loop: "{{ nfs_exports }}"
+
+    - name: Configurar /etc/exports
+      blockinfile:
+        path: /etc/exports
+        create: yes
+        block: |
+          {% for export in nfs_exports %}
+          {{ export.path }} {{ export.network }}({{ export.options }})
+          {% endfor %}
+
+    - name: Recargar exportaciones NFS
+      command: exportfs -ra
+
+    - name: Asegurar que el servicio NFS esté activo
+      service:
+        name: nfs-kernel-server
+        state: started
+        enabled: yes
+
+    - name: Instalar logrotate
+      apt:
+        name: logrotate
+        state: present
+      when: ansible_os_family == "Debian"
+
+
+    - name: Configurar logrotate para paths terminados en logs
+      copy:
+        dest: "/etc/logrotate.d/{{ item | regex_replace('^/','') | replace('/','_') }}.conf"
+        content: |
+          {{ item }}/*.log {
+              size 200M
+              missingok
+              rotate 7
+              compress
+              delaycompress
+              notifempty
+              create 0777 nobody nogroup
+              sharedscripts
+              postrotate
+                  systemctl reload rsyslog >/dev/null 2>&1 || true
+              endscript
+          }
+      loop: "{{ logrotate_paths }}"
