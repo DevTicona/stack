@@ -19,7 +19,6 @@
       - path: /nfs/capibara-demo/logs
         network: "192.168.26.240/24"
         options: rw,sync,no_subtree_check,no_root_squash
-
       - path: /nfs/wara-demo/imagenes
         network: "192.168.26.240/24"
         options: rw,sync,no_subtree_check,no_root_squash
@@ -32,7 +31,7 @@
   tasks:
     - name: Instalar paquetes NFS
       apt:
-        name: [nfs-kernel-server]
+        name: nfs-kernel-server
         state: present
       when: ansible_os_family == "Debian"
 
@@ -44,6 +43,7 @@
         group: nogroup
         mode: '0777'
       loop: "{{ nfs_exports }}"
+      notify: Reload NFS exports
 
     - name: Configurar /etc/exports
       blockinfile:
@@ -53,9 +53,7 @@
           {% for export in nfs_exports %}
           {{ export.path }} {{ export.network }}({{ export.options }})
           {% endfor %}
-
-    - name: Recargar exportaciones NFS
-      command: exportfs -ra
+      notify: Reload NFS exports
 
     - name: Asegurar que el servicio NFS esté activo
       service:
@@ -68,7 +66,6 @@
         name: logrotate
         state: present
       when: ansible_os_family == "Debian"
-
 
     - name: Configurar logrotate para paths terminados en logs
       copy:
@@ -88,3 +85,11 @@
               endscript
           }
       loop: "{{ logrotate_paths }}"
+      notify: Reload logrotate
+
+  handlers:
+    - name: Reload NFS exports
+      command: exportfs -ra
+
+    - name: Reload logrotate
+      command: systemctl reload rsyslog || true
