@@ -1,13 +1,33 @@
+
 services:
-  nginx-proxy-frontal:
+# --- OPCIÓN 1: usar Nginx como proxy frontal ---
+services:
+  nginx-frontal:
     image: nginx:alpine
-    container_name: nginx-proxy-frontal
+    container_name: nginx-frontal
+    restart: always
     ports:
       - "80:80"
-#      - "443:443"  # Si luego quieres usar HTTPS
     volumes:
-      - ./nginx.conf.template:/etc/nginx/nginx.conf:ro
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
     dns:
       - 8.8.8.8
       - 1.1.1.1
 
+# --- OPCIÓN 2: usar HAProxy en lugar de Nginx ---
+#  haproxy:
+#    image: haproxy:alpine
+#    container_name: haproxy
+#    ports:
+#      - "80:80"
+      # - "443:443"  # habilitar si usas HTTPS
+#    volumes:
+#      - ./templates/haproxy.conf.template:/etc/haproxy/haproxy.conf:ro
+#    dns:
+#      - 8.8.8.8
+#      - 1.1.1.1

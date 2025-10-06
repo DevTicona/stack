@@ -1,5 +1,5 @@
 ---
-- name: Instalar y configurar Docker con rotación de logs
+- name: Instalar y configurar Docker con rotación de logs (Debian)
   hosts: all
   become: yes
 
@@ -10,19 +10,19 @@
           - apt-transport-https
           - ca-certificates
           - curl
-          - gnupg-agent
-          - software-properties-common
+          - gnupg
+          - lsb-release
         state: present
         update_cache: yes
 
     - name: Agregar clave GPG de Docker
       apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
+        url: https://download.docker.com/linux/debian/gpg
         state: present
 
     - name: Agregar repositorio oficial de Docker
       apt_repository:
-        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+        repo: deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
         state: present
 
     - name: Instalar Docker Engine y complementos
@@ -40,13 +40,21 @@
         enabled: yes
         state: started
 
+    - name: Crear carpeta para plugin de Docker Compose
+      file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: Instalar Docker Compose (plugin moderno)
       get_url:
         url: https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-linux-x86_64
         dest: /usr/local/lib/docker/cli-plugins/docker-compose
         mode: '0755'
 
-    - name: Crear archivo de configuración de Docker
+    - name: Crear configuración global de Docker (rotación de logs)
       copy:
         dest: /etc/docker/daemon.json
         content: |
@@ -61,15 +69,35 @@
         owner: root
         group: root
         mode: '0644'
+      notify: Restart docker
 
-    - name: Reiniciar Docker para aplicar configuración
-      systemd:
-        name: docker
-        state: restarted
+    - name: Detectar usuario con UID 1000
+      command: "awk -F':' '$3 == 1000 {print $1}' /etc/passwd"
+      register: real_user
+      changed_when: false
 
-    - name: Verificar versión instalada
+    - name: Agregar usuario real al grupo docker
+      user:
+        name: "{{ real_user.stdout }}"
+        groups: docker
+        append: yes
+
+    - name: Aviso sobre sesión
+      debug:
+        msg: "El usuario {{ real_user.stdout }} fue agregado al grupo docker. Cierra sesión y vuelve a entrar para aplicar."
+
+    - name: Verificar instalación
       command: docker --version
       register: docker_version
 
     - debug:
         msg: "Docker instalado correctamente: {{ docker_version.stdout }}"
+
+  handlers:
+
+    - name: Restart docker
+      systemd:
+        name: docker
+        state: restarted
+        enabled: true
+
