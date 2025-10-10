@@ -1,5 +1,3 @@
-
-services:
 # --- OPCIÓN 1: usar Nginx como proxy frontal ---
 services:
   nginx-frontal:
@@ -9,7 +7,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./templates/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     ulimits:
       nofile:
         soft: 65535
