@@ -108,7 +108,7 @@ capibara.192.168.26.220.nip.io
 El resultado se guarda en:
 
 ```
-/etc/haproxy/certs/default.pem
+/etc/haproxy/certs/default.pem o en el drectorio qe definas en el script
 ```
 
 ---
@@ -200,7 +200,6 @@ Define cabeceras seguras, compresión, tamaño máximo de payload y soporte para
 
 * Docker y NFS configurados automáticamente.
 * Certificados autofirmados listos en `/etc/haproxy/certs`.
-* Claves SSH generadas para autenticación.
 * Secrets seguros para variables de entorno.
 * Plantillas HAProxy/Nginx listas para uso o personalización.
 
