@@ -207,4 +207,5 @@ Define cabeceras seguras, compresión, tamaño máximo de payload y soporte para
 ---
 
 **Autor:** Primo Ticona Callizaya
+
 **Licencia:** Uso interno institucional.
