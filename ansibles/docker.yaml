@@ -1,13 +1,29 @@
 ---
-- name: Instalar y configurar Docker con rotación de logs (Debian)
+- name: Instalar y configurar Docker y Docker Compose de manera limpia
   hosts: all
   become: yes
 
+  vars:
+    docker_compose_version: "v2.33.1"
+    target_user: "{{ ansible_user | default(ansible_env.SUDO_USER | default(ansible_user_id)) }}"
+
   tasks:
-    - name: Instalar dependencias
+    - name: Remover paquetes antiguos o no oficiales en conflicto
       apt:
         name:
-          - apt-transport-https
+          - docker.io
+          - docker-doc
+          - docker-compose
+          - docker-compose-v2
+          - podman-docker
+          - containerd
+          - runc
+        state: absent
+        purge: yes
+
+    - name: Instalar dependencias necesarias
+      apt:
+        name:
           - ca-certificates
           - curl
           - gnupg
@@ -15,46 +31,51 @@
         state: present
         update_cache: yes
 
-    - name: Agregar clave GPG de Docker
-      apt_key:
-        url: https://download.docker.com/linux/debian/gpg
-        state: present
-
-    - name: Agregar repositorio oficial de Docker
-      apt_repository:
-        repo: deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
-        state: present
-
-    - name: Instalar Docker Engine y complementos
-      apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-        state: latest
-        update_cache: yes
-
-    - name: Habilitar y asegurar inicio automático de Docker
-      systemd:
-        name: docker
-        enabled: yes
-        state: started
-
-    - name: Crear carpeta para plugin de Docker Compose
+    - name: Crear directorio seguro para keyrings de apt
       file:
-        path: /usr/local/lib/docker/cli-plugins
+        path: /etc/apt/keyrings
         state: directory
         owner: root
         group: root
         mode: '0755'
 
-    - name: Instalar Docker Compose (plugin moderno)
+    - name: Descargar clave GPG oficial de Docker
       get_url:
-        url: https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-linux-x86_64
-        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        force: yes
+
+    - name: Configurar repositorio oficial de Docker
+      apt_repository:
+        repo: >-
+          deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/{{ ansible_distribution | lower }}
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+        update_cache: yes
+
+    - name: Instalar Docker Engine, CLI, containerd y plugins oficiales
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: latest
+        update_cache: yes
+
+    - name: Asegurar directorio de configuración de Docker
+      file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
         mode: '0755'
 
-    - name: Crear configuración global de Docker (rotación de logs)
+    - name: Configurar daemon.json (rotación de logs y defaults)
       copy:
         dest: /etc/docker/daemon.json
         content: |
@@ -69,35 +90,49 @@
         owner: root
         group: root
         mode: '0644'
-      notify: Restart docker
+      notify: Reiniciar docker
 
-    - name: Detectar usuario con UID 1000
-      command: "awk -F':' '$3 == 1000 {print $1}' /etc/passwd"
-      register: real_user
-      changed_when: false
+    - name: Habilitar y arrancar servicios de Docker
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop:
+        - docker
+        - containerd
 
-    - name: Agregar usuario real al grupo docker
+    - name: Asegurar permisos en socket de Docker
+      file:
+        path: /var/run/docker.sock
+        owner: root
+        group: docker
+        mode: '0660'
+      ignore_errors: yes
+
+    - name: Identificar usuario para grupo docker
+      set_fact:
+        target_username: "{{ ansible_env.SUDO_USER if (ansible_env.SUDO_USER is defined and ansible_env.SUDO_USER != 'root') else (ansible_user if ansible_user is defined else lookup('env', 'USER')) }}"
+
+    - name: Agregar usuario al grupo docker
       user:
-        name: "{{ real_user.stdout }}"
+        name: "{{ target_username }}"
         groups: docker
         append: yes
+      when: target_username is defined and target_username != '' and target_username != 'root'
 
-    - name: Aviso sobre sesión
+    - name: Verificar instalación de Docker y Docker Compose
+      command: docker compose version
+      register: compose_ver
+      changed_when: false
+
+    - name: Mostrar versión instalada y aviso de activación de grupo
       debug:
-        msg: "El usuario {{ real_user.stdout }} fue agregado al grupo docker. Cierra sesión y vuelve a entrar para aplicar."
-
-    - name: Verificar instalación
-      command: docker --version
-      register: docker_version
-
-    - debug:
-        msg: "Docker instalado correctamente: {{ docker_version.stdout }}"
+        msg:
+          - "Docker instalado con éxito: {{ compose_ver.stdout }}"
+          - "AVISO: Para activar el grupo 'docker' en tu terminal activa inmediatamente sin reiniciar sesión, ejecuta: newgrp docker"
 
   handlers:
-
-    - name: Restart docker
+    - name: Reiniciar docker
       systemd:
         name: docker
         state: restarted
-        enabled: true
-

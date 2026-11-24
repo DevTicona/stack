@@ -1,6 +1,6 @@
 # Stack Base – Infraestructura Automatizada AGETIC
 
-Este proyecto proporciona una base reproducible para configurar servicios esenciales como **Docker**, **NFS**, **HAProxy** y **Nginx**, junto con herramientas auxiliares para **certificados**, **llaves criptográficas** y **secrets** seguros.
+Este proyecto proporciona una base reproducible para configurar servicios esenciales como **Docker**, **Docker Compose**, **NFS**, **HAProxy** y **Nginx**, junto con herramientas auxiliares para **certificados**, **llaves criptográficas** y **secrets** seguros.
 
 ---
 
@@ -14,7 +14,8 @@ stack-base/
 ├── docker-compose.yaml
 ├── scripts/
 │   ├── autofirmado.sh
-│   └── gen_secrets.sh
+│   ├── generar_secrets.sh
+│   └── instalar_docker.sh
 └── templates/
     ├── haproxy.conf.template
     └── nginx.conf.template
@@ -26,38 +27,22 @@ stack-base/
 
 ### 🧩 `ansibles/`
 
-Automatiza la configuración del entorno base.
+Automatiza la configuración del entorno base mediante playbooks de Ansible.
 
 * **docker.yaml**
-  Instala y configura Docker y el plugin de Compose.
-  Prepara el sistema para levantar contenedores de forma segura y persistente.
-
-  #### ⚠️ Nota sobre compatibilidad Debian 13
-
-  En Debian 13, la instalación falla en las tareas de **agregar clave GPG** y **repositorio de Docker** debido a cambios en el manejo de `apt-key`.
-  Se recomienda reemplazar esas tareas por el método actualizado basado en `gpg --dearmor` y repositorio manual:
-
-  ```yaml
-  - name: Agregar clave GPG manualmente (Debian 13)
-    shell: |
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-      chmod a+r /etc/apt/keyrings/docker.gpg
-
-  - name: Agregar repositorio oficial Docker (Debian 13)
-    copy:
-      dest: /etc/apt/sources.list.d/docker.list
-      content: |
-        deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable
-  ```
-
-  Esto sustituye las tareas `apt_key` y `apt_repository` para asegurar compatibilidad con Debian 13.
+  Instala y configura de forma limpia **Docker Engine**, **containerd**, y el plugin oficial **docker-compose-plugin** (`docker compose`).
+  
+  **Mejoras y compatibilidad:**
+  - Desinstala previamente paquetes viejos o en conflicto (`docker.io`, `docker-compose`, `podman-docker`, `runc`).
+  - Cumple con las especificaciones modernas de APT usando `/etc/apt/keyrings/docker.asc` (sin el comando obsoleto `apt-key`), haciéndolo 100% compatible con **Debian 11/12/13** y **Ubuntu 20.04/22.04/24.04+**.
+  - Instala `docker-compose-plugin` directamente desde el repositorio oficial de Docker.
+  - Configura `/etc/docker/daemon.json` con rotación automática de logs (`json-file`, 10m, 3 ficheros comprimidos).
+  - Agrega el usuario del sistema al grupo `docker`.
 
 * **nfs.yaml**
   Configura exportaciones NFS compartidas con permisos controlados y soporte para redes específicas.
-  Útil para montar volúmenes entre servicios Capibara, Wara u otros.
 
-Ejemplo:
+**Ejecución con Ansible:**
 
 ```bash
 ansible-playbook -i hosts ansibles/docker.yaml
@@ -66,20 +51,27 @@ ansible-playbook -i hosts ansibles/nfs.yaml
 
 ---
 
-### 🐳 `docker-compose.yaml`
+## 🧰 Scripts
 
-Define los servicios base del entorno (proxies, registries o utilitarios).
-Permite levantar toda la infraestructura con:
+### 🐳 `scripts/instalar_docker.sh`
+
+Script Bash autónomo para **instalación limpia y directa** de Docker Engine y Docker Compose (plugin oficial) sin necesidad de Ansible.
+
+**Características:**
+* Purga paquetes antiguos conflictivos.
+* Detecta automáticamente si el sistema es Debian o Ubuntu y su arquitectura (`amd64`, etc.).
+* Agrega las llaves y repositorios oficiales de Docker de forma segura en `/etc/apt/keyrings/docker.asc`.
+* Instala `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin` y `docker-compose-plugin`.
+* Configura la rotación de logs en `/etc/docker/daemon.json` y habilita los servicios.
+* Añade automáticamente al usuario ejecutor al grupo `docker`.
+
+**Uso:**
 
 ```bash
-docker compose up -d
+sudo ./scripts/instalar_docker.sh
 ```
 
-Ideal para entornos locales o demo antes de despliegues institucionales.
-
 ---
-
-## 🧰 Scripts
 
 ### 🔐 `scripts/autofirmado.sh`
 
@@ -87,7 +79,6 @@ Genera certificados **autofirmados con SAN** (Subject Alternative Name) para mú
 Pensado para HAProxy o Nginx en entornos internos.
 
 **Características:**
-
 * Crea `.crt`, `.key` y `.pem`.
 * Incluye varios dominios (nip.io, sslip.io o personalizados).
 * Configurable para cualquier red o entorno.
@@ -98,113 +89,105 @@ Pensado para HAProxy o Nginx en entornos internos.
 sudo ./scripts/autofirmado.sh
 ```
 
-**Ejemplo de dominios integrados:**
-
-```
-wara.192.168.26.220.nip.io
-capibara.192.168.26.220.nip.io
-```
-
 El resultado se guarda en:
-
 ```
-/etc/haproxy/certs/default.pem o en el drectorio qe definas en el script
+/etc/haproxy/certs/default.pem
 ```
 
 ---
 
-### 🧬 `scripts/gen_secrets.sh`
+### 🧬 `scripts/generar_secrets.sh`
 
-Genera cadenas aleatorias seguras (por ejemplo, claves JWT, tokens API o contraseñas).
-Usa `openssl` para producir valores en Base64 de longitud configurable.
+Genera cadenas aleatorias seguras (claves JWT, tokens API o contraseñas) usando `openssl`.
 
 **Uso:**
 
 ```bash
-./scripts/gen_secrets.sh <longitud> <cantidad>
+./scripts/generar_secrets.sh <longitud> <cantidad>
 ```
 
 **Ejemplo:**
 
 ```bash
-./scripts/gen_secrets.sh 64 3
+./scripts/generar_secrets.sh 64 3
 ```
-
-Genera 3 secretos de 64 caracteres cada uno.
-
-Salida:
-
-```
-zF1hA...KnB7
-K82sE...s9Jq
-aHeP9...fWZ1
-```
-
-Opcionalmente se puede modificar para imprimir en formato `VAR=value`.
 
 ---
 
-## 🧩 Templates
+### 🐳 `docker-compose.yaml`
 
-### `templates/haproxy.conf.template`
+Define los servicios base del entorno (proxies, registries o utilitarios).
+Permite levantar toda la infraestructura con el comando moderno de compose:
 
-Plantilla base para HAProxy, usada como proxy frontal de múltiples servicios.
-Incluye bloques `frontend`, `backend` y soporte SSL (`/etc/haproxy/certs/default.pem`).
+```bash
+docker compose up -d
+```
 
-### `templates/nginx.conf.template`
+---
 
-Configuración base de Nginx como proxy inverso interno.
-Define cabeceras seguras, compresión, tamaño máximo de payload y soporte para WebSockets.
+### 🧩 Templates
+
+* **`templates/haproxy.conf.template`**: Plantilla base para HAProxy, usada como proxy frontal de múltiples servicios con soporte SSL.
+* **`templates/nginx.conf.template`**: Configuración base de Nginx como proxy inverso interno con compresión y WebSockets.
 
 ---
 
 ## 🚀 Flujo Recomendado
 
-1. **Preparar el servidor:**
+1. **Instalar Docker y Docker Compose:**
+   
+   * *Opción A (Mediante Script directo):*
+     ```bash
+     sudo ./scripts/instalar_docker.sh
+     ```
+   
+   * *Opción B (Mediante Ansible):*
+     ```bash
+     ansible-playbook -i hosts ansibles/docker.yaml
+     ansible-playbook -i hosts ansibles/nfs.yaml
+     ```
 
-   ```bash
-   ansible-playbook -i hosts ansibles/docker.yaml
-   ansible-playbook -i hosts ansibles/nfs.yaml
-   ```
-
-2. **Generar certificados y llaves:**
-
+2. **Generar certificados:**
    ```bash
    sudo ./scripts/autofirmado.sh
-   ./scripts/generar_llaves.sh proxy
    ```
 
-3. **Crear secretos seguros:**
-
+3. **Crear secretos:**
    ```bash
-   ./scripts/gen_secrets.sh 64 2
+   ./scripts/generar_secrets.sh 64 2
    ```
 
 4. **Desplegar servicios:**
-
    ```bash
    docker compose up -d
    ```
 
 ---
 
+## ⚠️ Solución de Problemas Frecuentes
+
+### Error: `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`
+
+Si tras instalar Docker intentas correr `docker ps` y obtienes este error, se debe a que la sesión activa de tu terminal se inició antes de que tu usuario fuera incorporado al grupo `docker`.
+
+Para resolverlo de inmediato en tu terminal actual sin reiniciar el equipo ni la sesión:
+
+```bash
+newgrp docker
+docker ps
+```
+
+O bien cierra sesión e inicia sesión nuevamente (o reconecta tu sesión SSH).
+
+---
+
 ## 🧠 Requisitos Técnicos
 
-* **Sistema:** Debian / Ubuntu Server
-* **Dependencias:** `ansible`, `docker`, `docker-compose-plugin`, `openssl`, `bash`
-* **Permisos:** sudo o root para generación de certificados
+* **Sistema:** Debian (11, 12, 13) o Ubuntu (20.04, 22.04, 24.04+)
+* **Dependencias:** `curl`, `ca-certificates`, `gnupg`, `openssl`, `bash` (opcional: `ansible`)
+* **Permisos:** sudo o root
 
 ---
 
-## 🧩 Resultados Esperados
-
-* Docker y NFS configurados automáticamente.
-* Certificados autofirmados listos en `/etc/haproxy/certs`.
-* Secrets seguros para variables de entorno.
-* Plantillas HAProxy/Nginx listas para uso o personalización.
-
----
-
-**Autor:** Primo Ticona Callizaya
-
+**Autor:** Primo Ticona Callizaya  
 **Licencia:** Uso interno institucional.
